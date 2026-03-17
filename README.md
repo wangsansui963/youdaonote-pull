@@ -12,6 +12,24 @@
 
 如果你是非技术人员，也提供[可直接本地运行程序](https://github.com/DeppWang/youdaonote-pull/releases/)，不需要安装 Git、Python 和下载代码。具体使用教程请看[更简单的「有道云笔记」导出与备份](https://depp.wang/2024/simple-youdaonote-pull/)
 
+2. 修改 core/image.py
+✅ 将图床从 SM.MS 迁移到 ImgBB
+✅ 参数名：smms_secret_token → imgrb_secret_token
+✅ 方法名：upload_to_smms() → upload_to_imgbb()
+✅ API 地址：https://api.imgbb.com/1/upload
+✅ 保留降级逻辑（上传失败时下载到本地）
+🔧 接下来你需要做的
+1. 获取 ImgBB API Key
+访问 https://api.imgbb.com/
+注册/登录账号
+获取 API Key
+2. 配置 config.json
+在你的服务器上使用脚本时，config.json 需要添加/修改：
+
+{
+  "imgrb_api_key": "你的 ImgBB API Key"
+}
+
 ## 使用步骤
 
 - [视频教程](https://www.bilibili.com/video/BV11F411F7vG/?share_source=copy_web&vd_source=8bd019082f4e243f4bb5c3b6fabf4dd8)
