@@ -19,16 +19,16 @@ class ImagePull:
     def __init__(
         self,
         youdaonote_api,
-        smms_secret_token: str,
+        imgrb_secret_token: str,
         is_relative_path: bool,
     ):
         self.youdaonote_api = youdaonote_api
-        self.smms_secret_token = smms_secret_token
+        self.imgrb_secret_token = imgrb_secret_token
         self.is_relative_path = is_relative_path
 
     @classmethod
     def _url_encode(cls, file_path: str):
-        """对一些特殊字符url编码
+        """对一些特殊字符 url 编码
         :param file_path:
         """
         file_path = file_path.replace(" ", "%20")
@@ -60,7 +60,7 @@ class ImagePull:
                 continue
             # 将绝对路径替换为相对路径，实现满足 Obsidian 格式要求
             # 将 image_path 路径中 images 之前的路径去掉，只保留以 images 开头的之后的路径
-            if self.is_relative_path and not self.smms_secret_token:
+            if self.is_relative_path and not self.imgrb_secret_token:
                 image_path = image_path[image_path.find(IMAGES) :]
 
             image_path = self._url_encode(image_path)
@@ -93,16 +93,16 @@ class ImagePull:
         :param image_url:
         :return: new_image_path
         """
-        # 当 smms_secret_token 为空（不上传到 SM.MS），下载到图片到本地
-        if not self.smms_secret_token:
+        # 当 imgrb_secret_token 为空（不上传到 ImgBB），下载到图片到本地
+        if not self.imgrb_secret_token:
             image_path = self._download_ydnote_url(file_path, image_url)
             return image_path or image_url
 
-        # smms_secret_token 不为空，上传到 SM.MS
-        new_file_url, error_msg = ImageUpload.upload_to_smms(
+        # imgrb_secret_token 不为空，上传到 ImgBB
+        new_file_url, error_msg = ImageUpload.upload_to_imgbb(
             youdaonote_api=self.youdaonote_api,
             image_url=image_url,
-            smms_secret_token=self.smms_secret_token,
+            imgrb_secret_token=self.imgrb_secret_token,
         )
         # 如果上传失败，仍下载到本地
         if not error_msg:
@@ -157,7 +157,7 @@ class ImagePull:
                 "\\", "/"
             )
         else:
-            # 截取字符串 file_path 中文件夹全路径(即实现在具体文件夹目录下再生成图片文件夹路径，而非在根目录生成图片文件夹路径)
+            # 截取字符串 file_path 中文件夹全路径 (即实现在具体文件夹目录下再生成图片文件夹路径，而非在根目录生成图片文件夹路径)
             local_file_dir = os.path.join(
                 file_path[: file_path.rfind("/")], file_dirname
             ).replace("\\", "/")
@@ -214,52 +214,55 @@ class ImageUpload(object):
     """
 
     @staticmethod
-    def upload_to_smms(youdaonote_api, image_url, smms_secret_token) -> Tuple[str, str]:
+    def upload_to_imgbb(youdaonote_api, image_url, imgrb_secret_token) -> Tuple[str, str]:
         """
-        上传图片到 sm.ms
+        上传图片到 ImgBB
+        :param youdaonote_api:
         :param image_url:
-        :param smms_secret_token:
+        :param imgrb_secret_token: ImgBB API Key
         :return: url, error_msg
         """
         try:
-            smfile = youdaonote_api.http_get(image_url).content
+            image_content = youdaonote_api.http_get(image_url).content
         except:
             error_msg = "下载「{}」失败！图片可能已失效，可浏览器登录有道云笔记后，查看图片是否能正常加载".format(image_url)
             return "", error_msg
-        files = {"smfile": smfile}
-        upload_api_url = "https://sm.ms/api/v2/upload"
-        headers = {"Authorization": smms_secret_token}
+        
+        # ImgBB API: https://api.imgbb.com/1/upload
+        upload_api_url = "https://api.imgbb.com/1/upload"
+        params = {"key": imgrb_secret_token}
+        files = {"image": image_content}
 
         error_msg = (
-            "SM.MS 免费版每分钟限额 20 张图片，每小时限额 100 张图片，大小限制 5 M，上传失败！「{}」未转换，"
-            "将下载图片到本地".format(image_url)
+            "ImgBB 上传失败！「{}」未转换，将下载图片到本地".format(image_url)
         )
         try:
             res_json = requests.post(
-                upload_api_url, headers=headers, files=files, timeout=5
+                upload_api_url, params=params, files=files, timeout=10
             ).json()
         except requests.exceptions.ProxyError as err:
-            error_msg = "网络错误，上传「{}」到 SM.MS 失败！将下载图片到本地。错误提示：{}".format(
+            error_msg = "网络错误，上传「{}」到 ImgBB 失败！将下载图片到本地。错误提示：{}".format(
                 image_url, format(err)
             )
             return "", error_msg
-        except Exception:
+        except Exception as e:
+            error_msg = "上传「{}」到 ImgBB 异常：{}，将下载图片到本地".format(image_url, str(e))
             return "", error_msg
 
         if res_json.get("success"):
             url = res_json["data"]["url"]
             logging.info("已将图片「{}」转换为「{}」".format(image_url, url))
             return url, ""
-        if res_json.get("code") == "image_repeated":
-            url = res_json["images"]
+        
+        # 检查是否重复图片
+        if res_json.get("data", {}).get("url"):
+            url = res_json["data"]["url"]
             logging.info("已将图片「{}」转换为「{}」".format(image_url, url))
             return url, ""
-        if res_json.get("code") == "flood":
-            return "", error_msg
 
         error_msg = (
-            "上传「{}」到 SM.MS 失败，请检查图片 url 或 smms_secret_token（{}）是否正确！将下载图片到本地".format(
-                image_url, smms_secret_token
+            "上传「{}」到 ImgBB 失败，请检查图片 url 或 imgrb_secret_token（{}）是否正确！将下载图片到本地".format(
+                image_url, imgrb_secret_token
             )
         )
         return "", error_msg
